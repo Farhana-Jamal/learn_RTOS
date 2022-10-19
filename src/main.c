@@ -1,33 +1,47 @@
-#include <driver/gpio.h>
 #include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
+#include <driver/pcnt.h>
+#include<freertos/task.h>
 
+#define PCNT_GPIO 4
+#define H_LIM_VALUE 1000
+#define L_LIM_VALUE -10
+ 
+int unit;
 
-#define LEDPIN 2
-
-void configureLED(void)
+static void PCNT_init(int unit)
 {
-    gpio_reset_pin(LEDPIN);
-    gpio_set_direction(LEDPIN,GPIO_MODE_OUTPUT);
-}
-
-void blinkLED(void)
-{
-    while (1)
+    pcnt_config_t pcnt_config = 
     {
-        gpio_set_level(LEDPIN,0);
-        vTaskDelay(1000/portTICK_RATE_MS);
-        gpio_set_level(LEDPIN,1);
-        vTaskDelay(1000/portTICK_RATE_MS);
-        
-    }
-    
+        .pulse_gpio_num = PCNT_GPIO,
+        .channel = PCNT_CHANNEL_0,
+        .unit = unit,
+        .pos_mode = PCNT_COUNT_INC,
+        .neg_mode = PCNT_COUNT_DIS,
+        .counter_h_lim = H_LIM_VALUE,
+        .counter_l_lim = L_LIM_VALUE
+
+    };
+    pcnt_unit_config(&pcnt_config);
+
+    pcnt_set_filter_value(unit ,10);
+    pcnt_filter_enable(unit);
+     
+    pcnt_counter_pause(unit);
+    pcnt_counter_clear(unit);
+    pcnt_counter_resume(unit);
 }
 
-void app_main() 
+void app_main()
 {
-    configureLED();
-    blinkLED();
-    xTaskCreate(&blinkLED,"LED_BLINK",512,NULL,5,NULL);
+    int pcnt_unit = PCNT_UNIT_0;
+    PCNT_init(pcnt_unit);
+    
 
+    int16_t count = 0;
+    while(1)
+    {
+        pcnt_get_counter_value(pcnt_unit , &count);
+        printf("%d \n", count );
+        vTaskDelay(1000/portTICK_PERIOD_MS);
+    }
 }
