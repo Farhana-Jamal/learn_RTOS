@@ -1,5 +1,4 @@
 #include <string.h>
-
 #include "driver/gpio.h"
 #include "driver/i2c.h"
 #include "esp_err.h"
@@ -116,9 +115,44 @@ void ssd1306_init() {
 	i2c_cmd_link_delete(cmd);
 }
 
+void task_displayClear(void *ignore)
+{
+	esp_err_t espRc;
+
+	i2c_cmd_handle_t cmd;
+
+	uint8_t zero[128] = {0};
+
+	for(uint8_t i = 0 ; i<8 ; i++)
+	{
+		
+	    cmd = i2c_cmd_link_create();
+	    i2c_master_start(cmd);
+	    i2c_master_write_byte(cmd, (OLED_I2C_ADDRESS << 1) | I2C_MASTER_WRITE , true);
+	    i2c_master_write_byte(cmd , OLED_CONTROL_BYTE_CMD_SINGLE ,true);
+		i2c_master_write_byte(cmd , 0xB0 |i , true );
+		i2c_master_write_byte(cmd , OLED_CONTROL_BYTE_DATA_STREAM , true);
+	    i2c_master_write(cmd ,zero , 128 , true);
+		i2c_master_stop(cmd);
+		espRc = i2c_master_cmd_begin(I2C_NUM_0 ,cmd ,10/portTICK_PERIOD_MS);
+		if (espRc == ESP_OK) 
+	    {
+		    ESP_LOGI(tag, "OLED cleared successfully");
+	    } 
+	    else 
+	    {
+		    ESP_LOGE(tag, "OLED clear failed. code: 0x%.2X", espRc);
+	    }
+		i2c_cmd_link_delete(cmd);	
+	}
+	vTaskDelete(NULL);
+
+	
+}
 
 
-void task_displayText(const void *arg_text)
+
+void task_displayText(void *arg_text)
 {	
     char *text = (char *)arg_text;
 	uint8_t text_len = strlen(text);
@@ -189,13 +223,18 @@ void task_displayText(const void *arg_text)
 	 
         }
     }
+	
+	
 }
 void app_main(void)
 {
     i2c_master_init();
 	ssd1306_init();
 
-    xTaskCreate(&task_displayText ,(void*)"display text" , 2048 ,"u are so pretty \n georgeous" , 5 , NULL);
+	xTaskCreate(&task_displayClear , "displayClear" , 2048 , NULL , 6 , NULL);
+	vTaskDelay(100/portTICK_PERIOD_MS);
+
+    xTaskCreate(&task_displayText ,(void*)"displayText" , 2048 ,"u are so pretty \n georgeous" , 5 , NULL);
     vTaskDelay(1000/portTICK_PERIOD_MS);
 }
 
