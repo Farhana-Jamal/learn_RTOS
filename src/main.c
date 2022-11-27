@@ -3,6 +3,45 @@
 #include <driver/i2c.h>
 #include <esp_err.h>
 #include <esp_log.h>
+#include <font8x8_basic.h>
+
+#define OLED_I2C_ADDRESS   0x3C
+
+// Control byte
+#define OLED_CONTROL_BYTE_CMD_SINGLE    0x80
+#define OLED_CONTROL_BYTE_CMD_STREAM    0x00
+#define OLED_CONTROL_BYTE_DATA_STREAM   0x40
+
+// Fundamental commands (pg.28)
+#define OLED_CMD_SET_CONTRAST           0x81    // follow with 0x7F
+#define OLED_CMD_DISPLAY_RAM            0xA4
+#define OLED_CMD_DISPLAY_ALLON          0xA5
+#define OLED_CMD_DISPLAY_NORMAL         0xA6
+#define OLED_CMD_DISPLAY_INVERTED       0xA7
+#define OLED_CMD_DISPLAY_OFF            0xAE
+#define OLED_CMD_DISPLAY_ON             0xAF
+
+// Addressing Command Table (pg.30)
+#define OLED_CMD_SET_MEMORY_ADDR_MODE   0x20    // follow with 0x00 = HORZ mode = Behave like a KS108 graphic LCD
+#define OLED_CMD_SET_COLUMN_RANGE       0x21    // can be used only in HORZ/VERT mode - follow with 0x00 and 0x7F = COL127
+#define OLED_CMD_SET_PAGE_RANGE         0x22    // can be used only in HORZ/VERT mode - follow with 0x00 and 0x07 = PAGE7
+
+// Hardware Config (pg.31)
+#define OLED_CMD_SET_DISPLAY_START_LINE 0x40
+#define OLED_CMD_SET_SEGMENT_REMAP      0xA1    
+#define OLED_CMD_SET_MUX_RATIO          0xA8    // follow with 0x3F = 64 MUX
+#define OLED_CMD_SET_COM_SCAN_MODE      0xC8    
+#define OLED_CMD_SET_DISPLAY_OFFSET     0xD3    // follow with 0x00
+#define OLED_CMD_SET_COM_PIN_MAP        0xDA    // follow with 0x12
+#define OLED_CMD_NOP                    0xE3    // NOP
+
+// Timing and Driving Scheme (pg.32)
+#define OLED_CMD_SET_DISPLAY_CLK_DIV    0xD5    // follow with 0x80
+#define OLED_CMD_SET_PRECHARGE          0xD9    // follow with 0xF1
+#define OLED_CMD_SET_VCOMH_DESELCT      0xDB    // follow with 0x30
+
+// Charge Pump (pg.62)
+#define OLED_CMD_SET_CHARGE_PUMP        0x8D    // follow with 0x14
 
 
 #define SDA_PIN GPIO_NUM_21
@@ -23,6 +62,8 @@
 
 
 #define TAG "MPU6050"
+#define tag "SSD1306"
+#define TaG "I2C"
 
 
 void masterEsp32Init(void)
@@ -45,6 +86,52 @@ void masterEsp32Init(void)
     ESP_ERROR_CHECK(i2c_driver_install(I2C_NUM_0, I2C_MODE_MASTER, 0, 0, 0));
     printf("- i2c driver installed\r\n\r\n");
 }
+
+void ssd1306_init() {
+	esp_err_t espRc;
+
+	i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+
+	i2c_master_start(cmd);
+	i2c_master_write_byte(cmd, (OLED_I2C_ADDRESS << 1) | I2C_MASTER_WRITE, true);
+	
+	i2c_master_write_byte(cmd,OLED_CONTROL_BYTE_CMD_STREAM,true);
+	i2c_master_write_byte(cmd,OLED_CMD_DISPLAY_OFF,true);
+	i2c_master_write_byte(cmd,OLED_CMD_SET_MUX_RATIO,true);
+	i2c_master_write_byte(cmd,0x3F,true);
+	i2c_master_write_byte(cmd,OLED_CMD_SET_DISPLAY_OFFSET,true);
+	i2c_master_write_byte(cmd,0x00,true);
+	i2c_master_write_byte(cmd,OLED_CMD_SET_DISPLAY_START_LINE,true);
+	i2c_master_write_byte(cmd,OLED_CMD_SET_SEGMENT_REMAP,true);
+    i2c_master_write_byte(cmd,OLED_CMD_SET_COM_SCAN_MODE,true);
+	i2c_master_write_byte(cmd,OLED_CMD_SET_COM_PIN_MAP,true);
+	i2c_master_write_byte(cmd,0x12,true);
+	i2c_master_write_byte(cmd,OLED_CMD_SET_CONTRAST,true);
+	i2c_master_write_byte(cmd,0x7F,true);
+	i2c_master_write_byte(cmd,OLED_CMD_DISPLAY_RAM,true);
+	i2c_master_write_byte(cmd,OLED_CMD_DISPLAY_NORMAL,true);
+	i2c_master_write_byte(cmd,OLED_CMD_SET_DISPLAY_CLK_DIV,true);
+	i2c_master_write_byte(cmd,0x80,true);
+	i2c_master_write_byte(cmd,OLED_CMD_SET_CHARGE_PUMP,true);
+	i2c_master_write_byte(cmd,0x14,true);
+	i2c_master_write_byte(cmd,OLED_CMD_SET_PRECHARGE,true);
+	i2c_master_write_byte(cmd,0x22,true);
+	i2c_master_write_byte(cmd,OLED_CMD_SET_VCOMH_DESELCT,true);
+	i2c_master_write_byte(cmd,0x30,true);
+	i2c_master_write_byte(cmd,OLED_CMD_SET_MEMORY_ADDR_MODE,true);
+	i2c_master_write_byte(cmd,0x00,true);
+	i2c_master_write_byte(cmd,OLED_CMD_DISPLAY_ON,true);
+    i2c_master_stop(cmd);
+
+	espRc =i2c_master_cmd_begin(I2C_NUM_0, cmd, 10/portTICK_PERIOD_MS);
+	if (espRc == ESP_OK) {
+		ESP_LOGI(tag, "OLED configured successfully");
+	} else {
+		ESP_LOGE(tag, "OLED configuration failed. code: 0x%.2X", espRc);
+	}
+	i2c_cmd_link_delete(cmd);
+}
+
 
 
 void mpu6050Init()
@@ -73,6 +160,50 @@ void mpu6050Init()
 
 }
 
+void i2cScan()
+{
+    
+      
+    
+    esp_err_t espRC ;
+
+    int devicesFound = 0 ;
+    ESP_LOGI(TaG , "SCAnnING ........\r\n\r\n");
+
+    int address ;
+
+    for(address = 1 ; address < 127 ; address++)
+    {
+        i2c_cmd_handle_t cmd ;
+        cmd = i2c_cmd_link_create();
+        i2c_master_start(cmd);
+        i2c_master_write_byte(cmd , (address << 1) | I2C_MASTER_WRITE , true);
+        i2c_master_stop(cmd);
+
+        espRC = i2c_master_cmd_begin(I2C_NUM_0 , cmd , 10/portTICK_PERIOD_MS);
+
+        if(espRC == ESP_OK)
+        {
+            ESP_LOGI(TaG , "found device with address 0x%02x\r\n" , address);
+            devicesFound++ ;
+        }
+
+        i2c_cmd_link_delete(cmd);
+        if(devicesFound == 0)
+        {
+            ESP_LOGI(TaG , "no devices found ");
+            ESP_LOGI(TaG , "scan completed ");
+        }
+
+       
+            
+            
+    
+    }
+
+    
+}
+
 
 
 void readAcc()
@@ -92,17 +223,12 @@ void readAcc()
     i2c_master_start(cmd);
     i2c_master_write_byte(cmd , (mpuAddress <<1)|I2C_MASTER_READ , true);
 
-    // if(size > 1)
-    // {
-    //     i2c_master_read(cmd , data ,size -1 , ACK_VAL);
-      
-    // }
     i2c_master_read_byte(cmd ,&AccXH , ACK_VAL );
     i2c_master_read_byte(cmd ,&AccXL , ACK_VAL );
     i2c_master_read_byte(cmd ,&AccYH , ACK_VAL ); 
     i2c_master_read_byte(cmd ,&AccYL , ACK_VAL ); 
-    i2c_master_read_byte(cmd ,&AccZH , ACK_VAL);
-    i2c_master_read_byte(cmd , &AccZL, NACK_VAL);
+    i2c_master_read_byte(cmd ,&AccZH , ACK_VAL );
+    i2c_master_read_byte(cmd ,&AccZL ,  NACK_VAL);
     i2c_master_stop(cmd);
 
     espRC = i2c_master_cmd_begin(I2C_NUM_0 , cmd , 10/portTICK_PERIOD_MS);
@@ -165,8 +291,8 @@ void readGyro()
     i2c_master_read_byte(cmd ,&GyroXL , ACK_VAL );
     i2c_master_read_byte(cmd ,&GyroYH , ACK_VAL ); 
     i2c_master_read_byte(cmd ,&GyroYL , ACK_VAL ); 
-    i2c_master_read_byte(cmd ,&GyroZH , ACK_VAL);
-    i2c_master_read_byte(cmd ,&GyroZL, NACK_VAL);
+    i2c_master_read_byte(cmd ,&GyroZH , ACK_VAL );
+    i2c_master_read_byte(cmd ,&GyroZL , NACK_VAL);
 
     i2c_master_stop(cmd);
 
@@ -195,10 +321,7 @@ void readGyro()
     GYROY = gyroRawY * GYRO_TRANSFORMATION_NUMBER ;
     GYROZ = gyroRawZ * GYRO_TRANSFORMATION_NUMBER ;
 
-    // GYROX = (data[6] << 8 | data[7]);
-    // GYROY = (data[8] << 8 | data[9]);
-    // GYROZ = (data[10] << 8 | data[11]);
-
+    
     esp_log_level_set ("GYRO" , ESP_LOG_INFO);
     ESP_LOGI("GYRO" , "GyroX : %f" , GYROX);
     ESP_LOGI("GYRO" , "GyroY : %f" , GYROY);
@@ -269,6 +392,8 @@ void app_main()
 {
    masterEsp32Init();
    mpu6050Init();
+   ssd1306_init();
+   i2cScan();
 
    xTaskCreate(&readAcc , "accclrtn task" , 2048 , NULL , 5 , NULL);
    
