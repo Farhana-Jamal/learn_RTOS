@@ -70,7 +70,7 @@
 
 float AccX , AccY , AccZ;
 
-SemaphoreHandle_t semaphore ;
+SemaphoreHandle_t semaphore = NULL ;
 QueueHandle_t queue  = NULL ;
 
 
@@ -198,12 +198,11 @@ void i2cScan(int address1 , int address2)
 
 void floatToString()
 {
-    esp_err_t espRC;
+    // esp_err_t espRC;
 
     if(xSemaphoreTake(semaphore , portMAX_DELAY) == pdTRUE)
     {
-        espRC = xQueueReceive(queue ,&AccX , (TickType_t)1000/portTICK_PERIOD_MS);
-        if(espRC == ESP_OK)
+        if(xQueueReceive(queue ,&AccX , (TickType_t)1000/portTICK_PERIOD_MS) ==  pdTRUE) 
         {
             ESP_LOGI(Tag , "value received on queue %f\r\n " , AccX);
         }
@@ -215,27 +214,19 @@ void floatToString()
     }
     else
     {
-        printf("semaphore not working");
+        ESP_LOGI(taG ,"semaphore not working");
 
     }
-    // espRC = 
-    // if(espRC == ESP_OK)
-    // {
-    //     ESP_LOGI(taG , "semaphore given ");
-    // }
-    // else
-    // {
-    //     ESP_LOGI(taG , "not given ");
-    // }
-
     
+
+  vTaskDelete(NULL);  
 }
 
 
 
 void readAcc()
 {
-    esp_err_t espRC;
+    // esp_err_t espRC;
     i2c_cmd_handle_t cmd;
 
     uint8_t AccXH , AccXL ,AccYH ,AccYL ,AccZH ,AccZL ;
@@ -258,15 +249,15 @@ void readAcc()
     i2c_master_read_byte(cmd ,&AccZL ,  NACK_VAL);
     i2c_master_stop(cmd);
 
-    espRC = i2c_master_cmd_begin(I2C_NUM_0 , cmd , 10/portTICK_PERIOD_MS);
-    if(espRC == ESP_OK)
-    {
-        ESP_LOGI(TAG , " got Accln values");
-    }
-    else
-    {
-        ESP_LOGI(TAG , "FAiled (accltn)");
-    }
+    i2c_master_cmd_begin(I2C_NUM_0 , cmd , 10/portTICK_PERIOD_MS);
+    // if(espRC == ESP_OK)
+    // {
+    //     ESP_LOGI(TAG , " got Accln values");
+    // }
+    // else
+    // {
+    //     ESP_LOGI(TAG , "FAiled (accltn)");
+    // }
 
     i2c_cmd_link_delete(cmd);
 
@@ -288,6 +279,10 @@ void readAcc()
     // ESP_LOGI("ACC" , "AccZ : %f" , AccZ);
 
     xSemaphoreGive(semaphore);
+    if(semaphore != NULL)
+    {
+        ESP_LOGI(taG , " given ");
+    }
     xQueueSend(queue , &AccX , (TickType_t )1000/portTICK_PERIOD_MS);
 
    
@@ -428,6 +423,11 @@ void app_main()
    i2cScan(0x3C , 0x68);
    
    semaphore = xSemaphoreCreateCounting(14 , 0 );
+   if(semaphore != NULL)
+   {
+    ESP_LOGI(taG , " semaphore created");
+   }
+
 //    esp_err_t espRC ;
    queue = xQueueCreate(14 , sizeof(float));
    if( queue != NULL)
@@ -443,6 +443,7 @@ void app_main()
 //    }
 
    xTaskCreate(&readAcc , "accclrtn task" , 2048 , NULL , 5 , NULL);
+   xTaskCreate(&floatToString , "fltostr task " , 2048 , NULL , 5, NULL);
    
    
 //    xTaskCreate(&readGyro , "GYRO task " , 2048 , NULL , 5 , NULL);
