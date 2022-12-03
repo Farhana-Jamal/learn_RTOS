@@ -1,5 +1,6 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <freertos/semphr.h>
 #include <driver/i2c.h>
 #include <esp_err.h>
 #include <esp_log.h>
@@ -64,6 +65,13 @@
 #define TAG "MPU6050"
 #define tag "SSD1306"
 #define TaG "I2C"
+#define taG "semaphore"
+#define Tag "queue"
+
+float AccX , AccY , AccZ;
+
+SemaphoreHandle_t semaphore ;
+QueueHandle_t queue ;
 
 
 void masterEsp32Init(void)
@@ -160,48 +168,56 @@ void mpu6050Init()
 
 }
 
-void i2cScan()
+
+
+void i2cScan(int address1 , int address2)
 {
-    
-      
-    
     esp_err_t espRC ;
 
-    int devicesFound = 0 ;
     ESP_LOGI(TaG , "SCAnnING ........\r\n\r\n");
 
-    int address ;
+    i2c_cmd_handle_t cmd ;
+    cmd = i2c_cmd_link_create();
+    i2c_master_start(cmd);
+    i2c_master_write_byte(cmd , (address1 << 1) | I2C_MASTER_WRITE , true);
+    i2c_master_write_byte(cmd , (address2 << 1) | I2C_MASTER_WRITE , true);
+    i2c_master_stop(cmd);
 
-    for(address = 1 ; address < 127 ; address++)
+    espRC = i2c_master_cmd_begin(I2C_NUM_0 , cmd , 10/portTICK_PERIOD_MS);
+
+    if(espRC == ESP_OK)
     {
-        i2c_cmd_handle_t cmd ;
-        cmd = i2c_cmd_link_create();
-        i2c_master_start(cmd);
-        i2c_master_write_byte(cmd , (address << 1) | I2C_MASTER_WRITE , true);
-        i2c_master_stop(cmd);
-
-        espRC = i2c_master_cmd_begin(I2C_NUM_0 , cmd , 10/portTICK_PERIOD_MS);
-
-        if(espRC == ESP_OK)
-        {
-            ESP_LOGI(TaG , "found device with address 0x%02x\r\n" , address);
-            devicesFound++ ;
-        }
-
-        i2c_cmd_link_delete(cmd);
-        if(devicesFound == 0)
-        {
-            ESP_LOGI(TaG , "no devices found ");
-            ESP_LOGI(TaG , "scan completed ");
-        }
-
+        ESP_LOGI(TaG , "found device with address 0x%02x\r\n" , address1);
+        ESP_LOGI(TaG , "found device with address 0x%02x\r\n" , address2);
        
-            
-            
-    
+    }
+        
+    i2c_cmd_link_delete(cmd);
+
+}
+
+void floatToString()
+{
+    esp_err_t espRC;
+    espRC = xSemaphoreGive(semaphore);
+    if(espRC == ESP_OK)
+    {
+        ESP_LOGI(taG , "semaphore given ");
+    }
+    else
+    {
+        ESP_LOGI(taG , "not given ");
     }
 
-    
+    espRC = xQueueReceive(queue ,&AccX , (TickType_t)1000/portTICK_PERIOD_MS);
+    if(espRC == ESP_OK)
+    {
+    ESP_LOGI(Tag , "value received on queue %f\r\n " , AccX);
+    }
+    else
+    {
+        ESP_LOGI(Tag , "not recvd");
+    }
 }
 
 
@@ -244,7 +260,7 @@ void readAcc()
     i2c_cmd_link_delete(cmd);
 
     int16_t AccRawX , AccRawY , AccRawZ;
-    float AccX , AccY , AccZ;
+    
 
     AccRawX = (AccXH << 8 | AccXL);
     AccRawY = (AccYH << 8 | AccYL);
@@ -260,9 +276,14 @@ void readAcc()
     ESP_LOGI("ACC" , "AccY : %f" , AccY);
     ESP_LOGI("ACC" , "AccZ : %f" , AccZ);
 
+    xSemaphoreTake(semaphore , 1000/portMAX_DELAY);
+    xQueueSend(queue , &AccX , (TickType_t )1000/portTICK_PERIOD_MS);
+
    
 
     vTaskDelay(1000 / portTICK_PERIOD_MS);
+
+    
     }
 
 }
@@ -393,7 +414,17 @@ void app_main()
    masterEsp32Init();
    mpu6050Init();
    ssd1306_init();
-   i2cScan();
+   i2cScan(0x3C , 0x68);
+   
+   semaphore = xSemaphoreCreateCounting(14 , 0 );
+//    esp_err_t espRC ;
+   queue = xQueueCreate(14 , sizeof(float));
+
+//    if(espRC == ESP_OK)
+//    {
+//     ESP_LOGI(Tag , "queue created");
+
+//    }
 
    xTaskCreate(&readAcc , "accclrtn task" , 2048 , NULL , 5 , NULL);
    
