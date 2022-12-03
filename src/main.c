@@ -71,7 +71,7 @@
 float AccX , AccY , AccZ;
 
 SemaphoreHandle_t semaphore ;
-QueueHandle_t queue ;
+QueueHandle_t queue  = NULL ;
 
 
 void masterEsp32Init(void)
@@ -199,25 +199,36 @@ void i2cScan(int address1 , int address2)
 void floatToString()
 {
     esp_err_t espRC;
-    espRC = xSemaphoreGive(semaphore);
-    if(espRC == ESP_OK)
-    {
-        ESP_LOGI(taG , "semaphore given ");
-    }
-    else
-    {
-        ESP_LOGI(taG , "not given ");
-    }
 
-    espRC = xQueueReceive(queue ,&AccX , (TickType_t)1000/portTICK_PERIOD_MS);
-    if(espRC == ESP_OK)
+    if(xSemaphoreTake(semaphore , portMAX_DELAY) == pdTRUE)
     {
-    ESP_LOGI(Tag , "value received on queue %f\r\n " , AccX);
+        espRC = xQueueReceive(queue ,&AccX , (TickType_t)1000/portTICK_PERIOD_MS);
+        if(espRC == ESP_OK)
+        {
+            ESP_LOGI(Tag , "value received on queue %f\r\n " , AccX);
+        }
+        else
+        {
+            ESP_LOGI(Tag , "not recvd");
+        }
+
     }
     else
     {
-        ESP_LOGI(Tag , "not recvd");
+        printf("semaphore not working");
+
     }
+    // espRC = 
+    // if(espRC == ESP_OK)
+    // {
+    //     ESP_LOGI(taG , "semaphore given ");
+    // }
+    // else
+    // {
+    //     ESP_LOGI(taG , "not given ");
+    // }
+
+    
 }
 
 
@@ -271,12 +282,12 @@ void readAcc()
     AccZ = AccRawZ * ACCEL_TRANSFORMATION_NUMBER ;
 
 
-    esp_log_level_set ("ACC" , ESP_LOG_INFO);
-    ESP_LOGI("ACC" , "AccX : %f" , AccX);
-    ESP_LOGI("ACC" , "AccY : %f" , AccY);
-    ESP_LOGI("ACC" , "AccZ : %f" , AccZ);
+    // esp_log_level_set ("ACC" , ESP_LOG_INFO);
+    // ESP_LOGI("ACC" , "AccX : %f" , AccX);
+    // ESP_LOGI("ACC" , "AccY : %f" , AccY);
+    // ESP_LOGI("ACC" , "AccZ : %f" , AccZ);
 
-    xSemaphoreTake(semaphore , 1000/portMAX_DELAY);
+    xSemaphoreGive(semaphore);
     xQueueSend(queue , &AccX , (TickType_t )1000/portTICK_PERIOD_MS);
 
    
@@ -419,6 +430,11 @@ void app_main()
    semaphore = xSemaphoreCreateCounting(14 , 0 );
 //    esp_err_t espRC ;
    queue = xQueueCreate(14 , sizeof(float));
+   if( queue != NULL)
+   {
+    ESP_LOGI(Tag ,"queue is created ");
+
+   }
 
 //    if(espRC == ESP_OK)
 //    {
@@ -429,9 +445,9 @@ void app_main()
    xTaskCreate(&readAcc , "accclrtn task" , 2048 , NULL , 5 , NULL);
    
    
-   xTaskCreate(&readGyro , "GYRO task " , 2048 , NULL , 5 , NULL);
+//    xTaskCreate(&readGyro , "GYRO task " , 2048 , NULL , 5 , NULL);
 
-   xTaskCreate(&readTemp , " TEmp task " , 2048 , NULL , 5 , NULL);
+//    xTaskCreate(&readTemp , " TEmp task " , 2048 , NULL , 5 , NULL);
    vTaskDelay(1000 / portTICK_PERIOD_MS);
 }
 
